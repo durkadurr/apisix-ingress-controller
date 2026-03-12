@@ -66,6 +66,9 @@ func (v *ConsumerCustomValidator) ValidateCreate(ctx context.Context, obj runtim
 	if !controller.MatchConsumerGatewayRef(ctx, v.Client, consumerLog, consumer) {
 		return nil, nil
 	}
+	if err := v.validateUniqueName(ctx, consumer); err != nil {
+		return nil, err
+	}
 
 	return v.collectWarnings(ctx, consumer), nil
 }
@@ -79,12 +82,28 @@ func (v *ConsumerCustomValidator) ValidateUpdate(ctx context.Context, oldObj, ne
 	if !controller.MatchConsumerGatewayRef(ctx, v.Client, consumerLog, consumer) {
 		return nil, nil
 	}
+	if err := v.validateUniqueName(ctx, consumer); err != nil {
+		return nil, err
+	}
 
 	return v.collectWarnings(ctx, consumer), nil
 }
 
 func (*ConsumerCustomValidator) ValidateDelete(context.Context, runtime.Object) (admission.Warnings, error) {
 	return nil, nil
+}
+
+func (v *ConsumerCustomValidator) validateUniqueName(ctx context.Context, consumer *apisixv1alpha1.Consumer) error {
+	list := &apisixv1alpha1.ConsumerList{}
+	if err := v.Client.List(ctx, list); err != nil {
+		return fmt.Errorf("failed to list consumers: %w", err)
+	}
+	for _, existing := range list.Items {
+		if existing.Name == consumer.Name && existing.Namespace != consumer.Namespace {
+			return fmt.Errorf("consumer name %q already exists in namespace %q; consumer names must be unique across all namespaces", consumer.Name, existing.Namespace)
+		}
+	}
+	return nil
 }
 
 func (v *ConsumerCustomValidator) collectWarnings(ctx context.Context, consumer *apisixv1alpha1.Consumer) admission.Warnings {
