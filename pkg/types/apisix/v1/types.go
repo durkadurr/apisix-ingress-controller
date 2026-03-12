@@ -667,18 +667,9 @@ func ComposeStreamRouteName(namespace, name string, rule string) string {
 	return buf.String()
 }
 
-// ComposeConsumerName uses namespace and name of ApisixConsumer to compose
-// the Consumer name.
+// ComposeConsumerName uses name of ApisixConsumer to compose the Consumer name.
 func ComposeConsumerName(namespace, name string) string {
-	p := make([]byte, 0, len(namespace)+len(name)+1)
-	buf := bytes.NewBuffer(p)
-
-	// TODO If APISIX modifies the consumer name schema, we can drop this.
-	buf.WriteString(strings.Replace(namespace, "-", "_", -1))
-	buf.WriteString("_")
-	buf.WriteString(strings.Replace(name, "-", "_", -1))
-
-	return buf.String()
+	return name
 }
 
 // ComposePluginConfigName uses namespace, name to compose

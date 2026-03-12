@@ -29,6 +29,8 @@ import (
 	apirouter "github.com/apache/apisix-ingress-controller/pkg/api/router"
 	"github.com/apache/apisix-ingress-controller/pkg/apisix"
 	"github.com/apache/apisix-ingress-controller/pkg/config"
+	"github.com/apache/apisix-ingress-controller/pkg/kube"
+	listersv2 "github.com/apache/apisix-ingress-controller/pkg/kube/apisix/client/listers/config/v2"
 	"github.com/apache/apisix-ingress-controller/pkg/log"
 	"github.com/apache/apisix-ingress-controller/pkg/metrics"
 	"github.com/apache/apisix-ingress-controller/pkg/types"
@@ -80,6 +82,17 @@ func NewServer(cfg *config.Config) (*Server, error) {
 				zap.String("KeyFilePath", cfg.KeyFilePath),
 			)
 		} else {
+			var consumerLister listersv2.ApisixConsumerLister
+			if kubeClient, err := kube.NewKubeClient(cfg); err != nil {
+				log.Warnw("failed to create kube client for admission webhook, consumer name uniqueness will not be enforced",
+					zap.String("error", err.Error()),
+				)
+			} else {
+				factory := kubeClient.NewAPISIXSharedIndexInformerFactory()
+				factory.Apisix().V2().ApisixConsumers().Informer() // register informer
+				consumerLister = factory.Apisix().V2().ApisixConsumers().Lister()
+			}
+
 			admission := gin.New()
 			admission.Use(gin.Recovery(), gin.Logger())
 			apirouter.MountWebhooks(admission, &apisix.ClusterOptions{
@@ -89,7 +102,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 				BaseURL:          cfg.APISIX.DefaultClusterBaseURL,
 				MetricsCollector: metrics.NewPrometheusCollector(),
 				SchemaSynced:     true,
-			})
+			}, consumerLister)
 
 			srv.admissionServer = &http.Server{
 				Addr:    cfg.HTTPSListen,

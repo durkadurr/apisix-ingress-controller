@@ -20,13 +20,14 @@ import (
 
 	"github.com/apache/apisix-ingress-controller/pkg/api/validation"
 	"github.com/apache/apisix-ingress-controller/pkg/apisix"
+	listersv2 "github.com/apache/apisix-ingress-controller/pkg/kube/apisix/client/listers/config/v2"
 )
 
 // MountWebhooks mounts webhook related routes.
-func MountWebhooks(r *gin.Engine, co *apisix.ClusterOptions) {
+func MountWebhooks(r *gin.Engine, co *apisix.ClusterOptions, consumerLister listersv2.ApisixConsumerLister) {
 	// init the schema client, it will be used to query schema of objects.
 	_, _ = validation.GetSchemaClient(co)
 
-	r.POST("/validate", validation.NewHandlerFunc("apisix", validation.Validator))
+	r.POST("/validate", validation.NewHandlerFunc("apisix", validation.NewValidator(consumerLister)))
 
 }

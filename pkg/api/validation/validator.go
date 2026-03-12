@@ -24,11 +24,13 @@ import (
 	kwhvalidating "github.com/slok/kubewebhook/v2/pkg/webhook/validating"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 
 	"github.com/apache/apisix-ingress-controller/pkg/apisix"
 	v2 "github.com/apache/apisix-ingress-controller/pkg/kube/apisix/apis/config/v2"
+	listersv2 "github.com/apache/apisix-ingress-controller/pkg/kube/apisix/client/listers/config/v2"
 	"github.com/apache/apisix-ingress-controller/pkg/log"
 )
 
@@ -81,8 +83,22 @@ var (
 	}
 )
 
+// NewValidator returns a validating webhook validator. lister is used to
+// enforce cross-namespace uniqueness of ApisixConsumer names.
+func NewValidator(lister listersv2.ApisixConsumerLister) kwhvalidating.ValidatorFunc {
+	return func(ctx context.Context, review *kwhmodel.AdmissionReview, object metav1.Object) (result *kwhvalidating.ValidatorResult, err error) {
+		return validate(ctx, review, object, lister)
+	}
+}
+
+// Validator is the default validator used when no lister is available (e.g. tests).
 var Validator = kwhvalidating.ValidatorFunc(
 	func(ctx context.Context, review *kwhmodel.AdmissionReview, object metav1.Object) (result *kwhvalidating.ValidatorResult, err error) {
+		return validate(ctx, review, object, nil)
+	},
+)
+
+func validate(ctx context.Context, review *kwhmodel.AdmissionReview, object metav1.Object, lister listersv2.ApisixConsumerLister) (result *kwhvalidating.ValidatorResult, err error) {
 
 		log.Debugw("arrive validator webhook", zap.Any("object", object))
 
@@ -150,6 +166,9 @@ var Validator = kwhvalidating.ValidatorFunc(
 				}
 				valid, resultErr = validateIngressClassName(old.Spec.IngressClassName, ac.Spec.IngressClassName)
 			}
+			if valid && lister != nil {
+				valid, resultErr = validateConsumerNameUnique(lister, ac)
+			}
 		case ApisixTlsV2GVR:
 			atls := object.(*v2.ApisixTls)
 			if atls.Spec == nil {
@@ -198,8 +217,20 @@ var Validator = kwhvalidating.ValidatorFunc(
 			Valid:   valid,
 			Message: msg,
 		}, nil
-	},
-)
+}
+
+func validateConsumerNameUnique(lister listersv2.ApisixConsumerLister, ac *v2.ApisixConsumer) (bool, error) {
+	all, err := lister.List(labels.Everything())
+	if err != nil {
+		return false, fmt.Errorf("failed to list ApisixConsumers: %w", err)
+	}
+	for _, existing := range all {
+		if existing.Name == ac.Name && existing.Namespace != ac.Namespace {
+			return false, fmt.Errorf("consumer name %q already exists in namespace %q; consumer names must be unique across all namespaces", ac.Name, existing.Namespace)
+		}
+	}
+	return true, nil
+}
 
 func ValidateApisixRoutePlugins(plugins []v2.ApisixRoutePlugin) (valid bool, resultErr error) {
 	valid = true

@@ -71,7 +71,7 @@ func TestWebhooks(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, r := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("POST", "/validation", nil)
-	MountWebhooks(r, &apisix.ClusterOptions{})
+	MountWebhooks(r, &apisix.ClusterOptions{}, nil)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
