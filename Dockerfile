@@ -16,7 +16,7 @@
 ARG ENABLE_PROXY=false
 ARG BASE_IMAGE_TAG=nonroot
 
-FROM golang:1.20 AS build-env
+FROM golang:1.26 AS build-env
 LABEL maintainer="gxthrj@163.com"
 
 WORKDIR /build
@@ -28,7 +28,7 @@ RUN if [ "$ENABLE_PROXY" = "true" ] ; then go env -w GOPROXY=https://goproxy.cn,
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/go-build make build
 
-FROM gcr.io/distroless/static-debian12:${BASE_IMAGE_TAG}
+FROM gcr.io/distroless/static-debian13:${BASE_IMAGE_TAG}
 LABEL maintainer="gxthrj@163.com"
 ENV TZ=Hongkong
 
