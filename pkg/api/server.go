@@ -30,6 +30,7 @@ import (
 	"github.com/apache/apisix-ingress-controller/pkg/apisix"
 	"github.com/apache/apisix-ingress-controller/pkg/config"
 	"github.com/apache/apisix-ingress-controller/pkg/kube"
+	externalversions "github.com/apache/apisix-ingress-controller/pkg/kube/apisix/client/informers/externalversions"
 	listersv2 "github.com/apache/apisix-ingress-controller/pkg/kube/apisix/client/listers/config/v2"
 	"github.com/apache/apisix-ingress-controller/pkg/log"
 	"github.com/apache/apisix-ingress-controller/pkg/metrics"
@@ -43,6 +44,7 @@ type Server struct {
 	admissionServer *http.Server
 	httpListener    net.Listener
 	pprofMu         *http.ServeMux
+	consumerFactory externalversions.SharedInformerFactory
 }
 
 // NewServer initializes the API Server.
@@ -91,6 +93,7 @@ func NewServer(cfg *config.Config) (*Server, error) {
 				factory := kubeClient.NewAPISIXSharedIndexInformerFactory()
 				factory.Apisix().V2().ApisixConsumers().Informer() // register informer
 				consumerLister = factory.Apisix().V2().ApisixConsumers().Lister()
+				srv.consumerFactory = factory
 			}
 
 			admission := gin.New()
@@ -119,16 +122,26 @@ func NewServer(cfg *config.Config) (*Server, error) {
 
 // Run launches the API Server.
 func (srv *Server) Run(stopCh <-chan struct{}) error {
+	// Bug #1 fix: start the informer factory so the consumer lister cache is populated.
+	if srv.consumerFactory != nil {
+		srv.consumerFactory.Start(stopCh)
+		srv.consumerFactory.WaitForCacheSync(stopCh)
+	}
+
 	go func() {
 		<-stopCh
 
+		// Bug #2 fix: only wait for servers that are actually running.
+		cnt := 1
 		closed := make(chan struct{}, 2)
 		go srv.closeHttpServer(closed)
-		go srv.closeAdmissionServer(closed)
+		if srv.admissionServer != nil {
+			cnt++
+			go srv.closeAdmissionServer(closed)
+		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		cnt := 2
 		for cnt > 0 {
 			select {
 			case <-ctx.Done():
